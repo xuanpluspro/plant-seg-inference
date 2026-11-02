@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/xuanpluspro/plant-seg-lab",
+  "commit": "d053d6142e9b92491bdfe60503e32695a14412b5",
+  "model_copy": "model/ copied unchanged, including source notices and licenses",
+  "checkpoint_format": "plant_seg_lab_mpm5531_sparse_drm_cbm_v4"
+}
