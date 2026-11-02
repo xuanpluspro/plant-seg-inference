@@ -1,1 +1,0 @@
-Place the trained plant-seg-lab best_inference.pth or best.pth here. This is a complete segmentation checkpoint, NOT ImageNet backbone initialization weights. No extra pretrained backbone file is required for inference. Weights are not committed.

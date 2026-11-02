@@ -36,11 +36,13 @@ git clone https://github.com/xuanpluspro/plant-seg-inference.git
 cd plant-seg-inference
 ```
 
-将训练权重放在 `pretrained/best_inference.pth`，图片放在 `data/ck1`，或用绝对路径指向现有文件。不需要 ImageNet 预训练文件。
+`weights/` 存放训练完成的分割模型权重，与训练时的 ImageNet 骨干初始化权重区分。
+
+将训练权重放在 `weights/best_inference.pth`，图片放在 `data/ck1`，或用绝对路径指向现有文件。不需要 ImageNet 预训练文件。
 
 ```bash
 python -u predict.py \
-  --weights pretrained/best_inference.pth \
+  --weights weights/best_inference.pth \
   --input data/ck1 \
   --output outputs/ck1visual \
   --mode full
@@ -61,7 +63,7 @@ python predict.py --weights "F:\中期\三数据集一起训练的二分类模�
 显存不足后，手动选择新的输出目录运行滑窗，不复用整图的运行配置：
 
 ```bash
-python -u predict.py --weights pretrained/best_inference.pth --input data/ck1 \
+python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
   --output outputs/ck1visual_tile --mode tile --tile-size 512 --overlap 128
 ```
 
@@ -90,7 +92,7 @@ outputs/ck1visual/
 支持含 optimizer 等训练状态的完整 v4 checkpoint，以及已瘦身的 best_inference.pth。保留 format/model_config/完整模型权重及元数据；严格加载，不自动忽略缺失参数。不支持只有 state_dict 且无模型配置的文件，也不猜测旧版架构。
 
 ```bash
-python slim_checkpoint.py --weights pretrained/best.pth --output pretrained/best_inference.pth
+python slim_checkpoint.py --weights weights/best.pth --output weights/best_inference.pth
 ```
 
 使用 CPU 读取和保存，不训练、不构建模型、不改变权重精度。兼容中文路径，以文件对象读写；逐张量核对 dtype、shape 和数值后生成最终文件。原文件不覆盖。推理文件不能用于完整断点续训。

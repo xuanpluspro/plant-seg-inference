@@ -1,0 +1,7 @@
+# 推理权重
+
+将训练完成的 plant-seg-lab `best_inference.pth` 或 `best.pth` 放在此目录。
+
+推荐：`weights/best_inference.pth`。这是用于推理的完整分割模型权重，不是 ImageNet 骨干初始化权重；推理不需要额外下载预训练骨干。
+
+实际权重由用户上传，不提交 Git。也可以使用 `--weights` 指向任意其他路径。
