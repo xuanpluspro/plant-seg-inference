@@ -6,6 +6,7 @@
 
 - GPU 单图、整图推理；不缩放、不切块；默认开启 FP16 autocast。模型内原有的 FP32 特征交互保持不变。
 - 图片宽高只向右/下补到 32 的倍数（最小 64），输出裁回原始尺寸。3072×3072 不补边。
+- 默认保留最大前景连通域（8 邻域、按像素面积），去除与主体分离的小区域；整图/滑窗均在最终整张掩膜上处理。
 - 默认仅保存 `原图名_overlay.jpg`，植物前景以绿色半透明叠加，JPG quality=90。原图不改动。
 - 所有结果集中在一个输出目录；`meta/` 内保存运行参数、日志和逐图耗时。不会在仓库外另建日志目录。
 - 显存不足明确退出；不自动缩图、转滑窗或改用 CPU。CPU 版 PyTorch 不能执行推理。
@@ -24,6 +25,7 @@ python -c "import torch, torchvision; print(torch.__version__, torchvision.__ver
 ```bash
 uv pip install --python "$(command -v python)" numpy -i https://mirror.sjtu.edu.cn/pypi/web/simple
 uv pip install --python "$(command -v python)" Pillow -i https://mirror.sjtu.edu.cn/pypi/web/simple
+uv pip install --python "$(command -v python)" scipy -i https://mirror.sjtu.edu.cn/pypi/web/simple
 ```
 
 本地 Windows 应在 GPU 可用、torch 与 torchvision 匹配的环境中运行；`requirements.txt` 不会安装或替换 torch。
@@ -102,3 +104,20 @@ python slim_checkpoint.py --weights weights/best.pth --output weights/best_infer
 `model/` 从 UPSTREAM.json 标记的源提交原样复制，包含所需模块及原始来源/许可证文件。不会自动跟随训练仓库更新。更新模型源码时需核对版本和权重兼容性。
 
 轻量检查：`python -m unittest discover -s tests -v`，只测试图像处理、滑窗概率融合、输出命名、续跑配置及模拟前向调度，不导入 torch，不运行真实神经网络。语法编译另行检查。真实 checkpoint 加载、CUDA/AMP、3072 整图显存及分割效果尚需在服务器验证；这些测试不构成 GPU 精度验证。
+
+## 最大连通域后处理
+
+默认启用 `--largest-component`，使用 8 邻域：水平、垂直、对角相邻的前景像素都视为连通。根据前景像素数保留最大区域，其余置为背景，再生成 overlay 和可选 mask。滑窗模式先融合整图概率、生成整图类别掩膜，再做一次全局连通域分析，不是每块各保留一个。
+
+只按几何连通性和面积选择，不识别“哪株是目标黑麦草”：与主体断开的真实叶片也会删除，连到主体的杂草不会删除；若其他区域更大，会保留那个区域。不会自动闭运算、填洞或把断开的叶片连接起来。空前景保持全背景；面积相同时取按行扫描最先出现的区域。多分类按所有非零类的并集选取最大区域，保留区内原类别。
+
+`--no-largest-component` 关闭过滤；`--connectivity 4` 改为只考虑水平/垂直相邻。网络权重和原始图片均不修改。可选 `--save-probabilities` 仍保存后处理前的网络概率，不会伪造过滤后的概率。
+
+后处理在 CPU 数组上执行，不运行 CPU 神经网络。日志报告连通域数、保留前后像素数；`meta/run.json` 保存逐图统计，CSV 单独记录 `postprocess_seconds`。新增参数也参与续跑配置核对。
+
+如果此前已经生成未过滤的结果，使用新输出目录重新运行（例如 `outputs/ck1visual_largest`），不要对旧结果直接 `--resume`，否则会因配置不同而拒绝续跑。为节省磁盘仍默认只输出 JPG overlay。
+
+```bash
+python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
+  --output outputs/ck1visual_largest --mode full --largest-component
+```

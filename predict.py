@@ -12,6 +12,7 @@ from PIL import Image
 
 from inference.images import plan_images, overlay_image, save_image
 from inference.records import sha256_file, open_run, atomic_json
+from inference.postprocess import keep_largest_component
 
 
 def parser():
@@ -29,6 +30,9 @@ def parser():
     p.add_argument('--threshold', type=float, help='Optional binary foreground probability threshold; default argmax')
     p.add_argument('--save-mask', action='store_true', help='Optional PNG mask; binary IDs encoded 0/255')
     p.add_argument('--save-probabilities', action='store_true', help='Optional float32 CxHxW NPY; may be large')
+    p.add_argument('--largest-component', action=argparse.BooleanOptionalAction, default=True,
+                   help='Keep only the largest non-background connected region (default: enabled)')
+    p.add_argument('--connectivity', type=int, choices=[4, 8], default=8)
     p.add_argument('--resume', action='store_true', help='Skip completed, unchanged inputs after checking run settings')
     return p
 
@@ -40,6 +44,8 @@ def main(args):
         raise ValueError('Require tile-size >=64 divisible by 32, and 0 <= overlap < tile-size')
     if args.threshold is not None and not 0 < args.threshold < 1:
         raise ValueError('Threshold must be in (0,1)')
+    if args.largest_component:
+        from scipy import ndimage  # Fail early if the postprocessing dependency is missing.
     import torch
     from inference.checkpoints import load_model
     from inference.engine import predict_image
@@ -54,6 +60,7 @@ def main(args):
                   mode=args.mode, amp=args.amp, tile_size=args.tile_size, overlap=args.overlap,
                   alpha=args.alpha, jpg_quality=args.jpg_quality, threshold=args.threshold,
                   save_mask=args.save_mask, save_probabilities=args.save_probabilities,
+                  largest_component=args.largest_component, connectivity=args.connectivity,
                   upstream=json.loads((Path(__file__).parent/'UPSTREAM.json').read_text())['commit'])
     state, manifest = open_run(output, config, args.resume)
     logger = logging.getLogger('inference')
@@ -99,6 +106,15 @@ def main(args):
             torch.cuda.synchronize(device)
             seconds = time.perf_counter()-start
             peak = torch.cuda.max_memory_allocated(device)/1024**3
+            post_start = time.perf_counter()
+            if args.largest_component:
+                labels, component_stats = keep_largest_component(labels, args.connectivity)
+                logger.info('components=%d | foreground=%d -> %d pixels | removed=%d',
+                            component_stats['components'], component_stats['foreground_before'],
+                            component_stats['foreground_after'], component_stats['removed_pixels'])
+            else:
+                component_stats = {}
+            postprocess_seconds = time.perf_counter()-post_start
             save_start = time.perf_counter()
             if args.save_mask:
                 save_image(Image.fromarray(labels*255 if classes == 2 else labels), mask_path)
@@ -111,12 +127,13 @@ def main(args):
             # Overlay saved last; record is written only after all requested files succeed.
             save_image(overlay_image(image, labels, args.alpha), target, args.jpg_quality)
             state['completed'][key] = dict(input=signature, width=image.width, height=image.height,
-                inference_seconds=seconds, save_seconds=time.perf_counter()-save_start,
+                inference_seconds=seconds, postprocess_seconds=postprocess_seconds,
+                component_stats=component_stats, save_seconds=time.perf_counter()-save_start,
                 peak_allocated_gib=peak, overlay=str(target.relative_to(output)))
             atomic_json(state, manifest)
             logger.info('inference=%.2fs | peak=%.2f GiB | saved=%s', seconds, peak, target.name)
         with (output/'meta/per_image.csv').open('w', newline='', encoding='utf-8-sig') as stream:
-            fields = ['image','width','height','inference_seconds','save_seconds','peak_allocated_gib','overlay']
+            fields = ['image','width','height','inference_seconds','postprocess_seconds','save_seconds','peak_allocated_gib','overlay']
             writer = csv.DictWriter(stream, fieldnames=fields)
             writer.writeheader()
             for key, row in state['completed'].items():

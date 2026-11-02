@@ -1,3 +1,4 @@
 # Install a matching torch/torchvision pair separately for your GPU environment.
 numpy>=1.24
 Pillow>=9.5
+scipy>=1.10
