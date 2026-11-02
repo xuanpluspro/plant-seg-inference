@@ -121,3 +121,14 @@ python slim_checkpoint.py --weights weights/best.pth --output weights/best_infer
 python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
   --output outputs/ck1visual_largest --mode full --largest-component
 ```
+
+## 覆盖同一结果目录
+
+`--overwrite` 从头处理全部输入，原子替换同名输出图片，并重建本次运行记录。允许改变后处理设置；不能与 `--resume` 同时使用。不清空整个目录，不删除其他文件；未被本次输入覆盖的旧图片或未启用的额外输出仍会保留。运行过程中会暂时同时存在新旧结果，正常结束后当前输入对应结果均已更新；中断后用相同设置加 `--resume` 完成剩余图片（去掉 `--overwrite`）。
+
+```bash
+python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
+  --output outputs/ck1visual --mode full --largest-component --overwrite
+```
+
+旧说明中的“使用新目录”是默认保护行为；明确加 `--overwrite` 即可覆盖原目录，无需先删图片。

@@ -33,7 +33,9 @@ def parser():
     p.add_argument('--largest-component', action=argparse.BooleanOptionalAction, default=True,
                    help='Keep only the largest non-background connected region (default: enabled)')
     p.add_argument('--connectivity', type=int, choices=[4, 8], default=8)
-    p.add_argument('--resume', action='store_true', help='Skip completed, unchanged inputs after checking run settings')
+    writes = p.add_mutually_exclusive_group()
+    writes.add_argument('--resume', action='store_true', help='Skip completed, unchanged inputs after checking run settings')
+    writes.add_argument('--overwrite', action='store_true', help='Reprocess all inputs and replace matching outputs in the existing output directory')
     return p
 
 
@@ -62,11 +64,11 @@ def main(args):
                   save_mask=args.save_mask, save_probabilities=args.save_probabilities,
                   largest_component=args.largest_component, connectivity=args.connectivity,
                   upstream=json.loads((Path(__file__).parent/'UPSTREAM.json').read_text())['commit'])
-    state, manifest = open_run(output, config, args.resume)
+    state, manifest = open_run(output, config, args.resume, overwrite=args.overwrite)
     logger = logging.getLogger('inference')
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
-    for handler in (logging.StreamHandler(sys.stdout), logging.FileHandler(output/'meta/console.log', encoding='utf-8')):
+    for handler in (logging.StreamHandler(sys.stdout), logging.FileHandler(output/'meta/console.log', mode='w' if args.overwrite else 'a', encoding='utf-8')):
         handler.setFormatter(logging.Formatter('%(asctime)s | %(message)s'))
         logger.addHandler(handler)
     try:
@@ -88,7 +90,7 @@ def main(args):
             if previous and previous['input'] == signature and all(p.is_file() for p in required):
                 logger.info('[%d/%d] skip completed %s', index, len(plan), key)
                 continue
-            if not previous and not args.resume and any(p.exists() for p in required):
+            if not previous and not args.resume and not args.overwrite and any(p.exists() for p in required):
                 raise FileExistsError(f'Untracked output exists: {target}; use a fresh output directory')
             with Image.open(path) as source:
                 image = source.convert('RGB')

@@ -24,9 +24,16 @@ def atomic_json(payload, path):
         temporary.unlink(missing_ok=True)
 
 
-def open_run(output, config, resume):
+def open_run(output, config, resume, overwrite=False):
     output = Path(output)
     manifest = output / 'meta' / 'run.json'
+    if resume and overwrite:
+        raise ValueError('Choose either resume or overwrite')
+    if overwrite:
+        state = dict(config=config, completed={})
+        atomic_json(state, manifest)
+        (output / 'meta' / 'per_image.csv').unlink(missing_ok=True)
+        return state, manifest
     if manifest.exists():
         if not resume:
             raise FileExistsError('Existing run: use --resume or a new --output')
