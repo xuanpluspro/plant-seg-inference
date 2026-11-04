@@ -132,3 +132,72 @@ python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
 ```
 
 旧说明中的“使用新目录”是默认保护行为；明确加 `--overwrite` 即可覆盖原目录，无需先删图片。
+
+## 分割后区分绿叶／枯黄叶并统计枯叶率
+
+参考 SegVeg 的两阶段思路：先用现有二分类分割模型获得植物前景，再对**原图 RGB**中的保留前景提取颜色特征，交给已经训练好的 XGBoost、SVM 或 RandomForest 分类器。颜色分类发生在最大连通域筛选之后，不会把已删除区域重新计入植物。不开启 `--color-model` 时，原分割行为保持不变。
+
+特征直接沿用 [xgboostcolor](https://github.com/xuanpluspro/xgboostcolor) 提交 `f02507bdc00d3644e61866d15fbdeea1000f407d` 的 `vegetation_predictor.py`，顺序为 **R,G,B,H,S,a,b,GE,M,YE,Cb,Cr,I,Q**。RGB 为 0–255、H 为角度、S 为百分比；GE 是 RGB 均值，YCbCr 用 Pillow 转换，其余计算保持源代码一致。它是本仓库与该颜色仓库的特征契约，不声称与论文所有颜色转换细节逐位一致。只支持用这套 14 维原始特征训练的二分类模型，21 维模型不能混用；SVM 的标准化器必须和模型一起保存为 Pipeline，不能丢失训练预处理。
+
+### 准备颜色分类器
+
+将自己训练好的 pickle 模型分别放入：
+
+- `weights/color/xgboost/xgboost_stage2_model.pkl`
+- `weights/color/svm/svm_stage2.pkl`
+- `weights/color/random_forest/random_forest.pkl`
+
+不随本次更新下载模型或自动训练。源颜色仓库的 `artifacts/xgboost_stage2_model.pkl`、14维 `result*/xgboost_model.pkl` 及 `stage2_pipeline.py` 训练的模型属于候选格式，实际可加载性取决于 pickle 与依赖版本。随机森林同样要求 14 维特征、`classes_`、`n_features_in_`、`predict_proba`；本工具不负责训练分类器。XGBoost、SVM、随机森林是三种可选分类器，一次运行使用一个，不自动投票。
+
+按需逐个安装（不更换 torch）：
+
+```bash
+uv pip install --python "$(command -v python)" scikit-image -i https://mirror.sjtu.edu.cn/pypi/web/simple
+uv pip install --python "$(command -v python)" scikit-learn -i https://mirror.sjtu.edu.cn/pypi/web/simple
+# 仅 XGBoost 模型需要：
+uv pip install --python "$(command -v python)" xgboost -i https://mirror.sjtu.edu.cn/pypi/web/simple
+```
+
+pickle 应使用训练时匹配的依赖版本；安装最新版不保证旧 pickle 可用。这里不会靠补写未知属性掩盖版本问题；旧模型加载或预测报错时，应使用匹配环境重新导出或训练。SVM 必须训练为 `probability=True`。分类器默认标签 `1=green`、`0=senescent`，通过 `classes_` 定位概率列，不假定绿色永远位于第二列；其他整数标签可显式传 `--color-green-label`、`--color-senescent-label`。
+
+### 一条命令执行两阶段推理
+
+```bash
+python -u predict.py \
+  --weights weights/best_inference.pth \
+  --input data/ck1 \
+  --output outputs/ck1color \
+  --mode full \
+  --color-model weights/color/xgboost/xgboost_stage2_model.pkl \
+  --trust-color-model \
+  --save-color-mask
+```
+
+将 `--color-model` 换为 SVM 或随机森林路径即可。pickle 可能执行代码，因此仅对自己可信的模型使用 `--trust-color-model`。启动时检查特征数、类别及概率接口；神经网络仍只在 CUDA 推理，颜色分类与特征计算在 CPU 数组上运行，不在 CPU 训练或执行分割网络。每批最多 `--color-chunk-size 65536` 个候选像素，避免一次展开 3072×3072×14 特征；SVM 对大量像素仍可能明显耗时。
+
+默认绿色概率 `>= --color-threshold 0.5` 判为绿色，其余植物像素判为枯黄。背景不进入颜色分类。保留原图尺寸和坐标，不从绿色 overlay 或涂黑图中提取颜色。当前只接受二分类植物／背景分割模型，拒绝把多分类语义类别静默替换为颜色类别。
+
+### 输出及统计口径
+
+启用颜色分类后，原 `*_overlay.jpg` 改为绿叶绿色、枯黄叶黄色的叠加图，背景保持原图。`--save-color-mask` 额外保存 `extras/*_color_mask.png`，为 P 模式索引 PNG：0 背景（黑）、1 绿色（0,180,70）、2 枯黄（255,255,0）。原 `--save-mask` 仍是植物二分类掩膜；分割概率 NPY 也保持原含义，不是颜色分类概率。
+
+统计集中在 `meta/color_metrics.csv`，每完成一张图片即原子更新，并保存在 `meta/run.json` 的逐图记录中：
+
+| 字段 | 定义 |
+|---|---|
+| foreground_pixels | 连通域筛选后植物前景像素数 G+S |
+| green_pixels / senescent_pixels | 绿色 G／枯黄 S 的像素数 |
+| vegetation_fraction | (G+S)/整图像素数 |
+| green_fraction | G/整图像素数 |
+| senescent_fraction | S/整图像素数，SegVeg 风格 SF |
+| senescent_ratio | S/(G+S)，你要的前景内枯叶率，0–1 |
+| senescent_percent | 100×S/(G+S)，0–100百分数 |
+| color_seconds | 该图颜色特征计算与分类耗时 |
+
+空前景时计数和整图面积比例为 0，枯叶率为空（JSON 为 null），不会把“没有植物”误记成“枯叶率为零”。统计的是可见投影面积比例，不能代表叶片数量、真实三维叶面积或直接证明组织已死亡。分割前景若包含茎、穗等，比例也包含这些组织；要称为严格叶片枯叶率，需要前景本身只包含叶片。
+
+原图光照、白平衡和物种变化会影响颜色分类；源仓库的测试分数不能直接视为黑麦草上的准确率。建议人工核查一批目标域绿／枯黄像素及最终面积比例。最大连通域过滤也可能删除断开的真实叶片，需检查实际保留范围。
+
+颜色模型 SHA256、类别映射、阈值、分块大小、掩膜开关加入续跑配置核对。纯分割旧结果不能直接作为颜色结果跳过：请使用新输出目录，或显式 `--overwrite` 重算。颜色 CSV 只写本次运行清单中的记录；颜色阈值变更也必须重新运行。旧纯分割续跑配置保持兼容。
+
+验证：新增轻量测试覆盖前景筛选、分块一致、空掩膜、绿色概率列、异常概率、P 模式调色板、CSV 空值与原子更新。不运行 CPU 神经网络。真实颜色 pickle 的跨版本加载、scikit-image 特征执行及端到端 CUDA 联合推理仍需在用户环境验证。

@@ -11,3 +11,12 @@ weights/*
 !weights/README.md
 outputs/
 *visual/
+!weights/color/
+weights/color/**
+!weights/color/README.md
+!weights/color/xgboost/
+!weights/color/xgboost/README.md
+!weights/color/svm/
+!weights/color/svm/README.md
+!weights/color/random_forest/
+!weights/color/random_forest/README.md

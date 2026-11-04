@@ -33,6 +33,13 @@ def parser():
     p.add_argument('--largest-component', action=argparse.BooleanOptionalAction, default=True,
                    help='Keep only the largest non-background connected region (default: enabled)')
     p.add_argument('--connectivity', type=int, choices=[4, 8], default=8)
+    p.add_argument('--color-model', type=Path, help='Optional trusted 14D XGBoost/SVM/RandomForest pickle')
+    p.add_argument('--trust-color-model', action='store_true')
+    p.add_argument('--color-green-label', type=int, default=1)
+    p.add_argument('--color-senescent-label', type=int, default=0)
+    p.add_argument('--color-threshold', type=float, default=.5)
+    p.add_argument('--color-chunk-size', type=int, default=65536)
+    p.add_argument('--save-color-mask', action='store_true', help='Save indexed three-class PNG')
     writes = p.add_mutually_exclusive_group()
     writes.add_argument('--resume', action='store_true', help='Skip completed, unchanged inputs after checking run settings')
     writes.add_argument('--overwrite', action='store_true', help='Reprocess all inputs and replace matching outputs in the existing output directory')
@@ -46,6 +53,16 @@ def main(args):
         raise ValueError('Require tile-size >=64 divisible by 32, and 0 <= overlap < tile-size')
     if args.threshold is not None and not 0 < args.threshold < 1:
         raise ValueError('Threshold must be in (0,1)')
+    if args.color_chunk_size < 1 or not 0 < args.color_threshold < 1:
+        raise ValueError('Invalid color chunk size or threshold')
+    if args.save_color_mask and not args.color_model:
+        raise ValueError('--save-color-mask requires --color-model')
+    color_classifier = None
+    if args.color_model:
+        from inference.color_classification import (ColorClassifier, classify_foreground,
+            color_mask, color_overlay, export_color_csv)
+        color_classifier = ColorClassifier(args.color_model, args.trust_color_model,
+            args.color_green_label, args.color_senescent_label, args.color_threshold)
     if args.largest_component:
         from scipy import ndimage  # Fail early if the postprocessing dependency is missing.
     import torch
@@ -64,6 +81,11 @@ def main(args):
                   save_mask=args.save_mask, save_probabilities=args.save_probabilities,
                   largest_component=args.largest_component, connectivity=args.connectivity,
                   upstream=json.loads((Path(__file__).parent/'UPSTREAM.json').read_text())['commit'])
+    if color_classifier is not None:
+        config['color'] = dict(schema='xgboostcolor-14d-v1',
+            model_sha256=sha256_file(args.color_model), green_label=args.color_green_label,
+            senescent_label=args.color_senescent_label, threshold=args.color_threshold,
+            chunk_size=args.color_chunk_size, save_mask=args.save_color_mask)
     state, manifest = open_run(output, config, args.resume, overwrite=args.overwrite)
     logger = logging.getLogger('inference')
     logger.setLevel(logging.INFO)
@@ -74,6 +96,8 @@ def main(args):
     try:
         model, model_config = load_model(args.weights, device)
         classes = model_config['num_classes']
+        if color_classifier is not None and classes != 2:
+            raise ValueError('Color stage requires a binary vegetation/background segmentation model')
         if args.threshold is not None and classes != 2:
             raise ValueError('--threshold is supported only for binary checkpoints')
         logger.info('GPU=%s | images=%d | mode=%s | AMP=%s | output=%s',
@@ -86,7 +110,10 @@ def main(args):
             extra = output/'extras'/relative.parent
             mask_path = extra/(relative.stem+'_mask.png')
             prob_path = extra/(relative.stem+'_prob.npy')
+            color_path = extra/(relative.stem+'_color_mask.png')
             required = [target] + ([mask_path] if args.save_mask else []) + ([prob_path] if args.save_probabilities else [])
+            if color_classifier is not None and args.save_color_mask:
+                required.append(color_path)
             if previous and previous['input'] == signature and all(p.is_file() for p in required):
                 logger.info('[%d/%d] skip completed %s', index, len(plan), key)
                 continue
@@ -117,7 +144,19 @@ def main(args):
             else:
                 component_stats = {}
             postprocess_seconds = time.perf_counter()-post_start
+            color_stats = None
+            display_labels = labels
+            if color_classifier is not None:
+                color_start = time.perf_counter()
+                display_labels, color_stats = classify_foreground(
+                    np.asarray(image), labels > 0, color_classifier, args.color_chunk_size)
+                color_stats['color_seconds'] = time.perf_counter()-color_start
+                logger.info('green=%d | senescent=%d | senescent_ratio=%s',
+                    color_stats['green_pixels'], color_stats['senescent_pixels'],
+                    color_stats['senescent_ratio'])
             save_start = time.perf_counter()
+            if color_classifier is not None and args.save_color_mask:
+                save_image(color_mask(display_labels), color_path)
             if args.save_mask:
                 save_image(Image.fromarray(labels*255 if classes == 2 else labels), mask_path)
             if args.save_probabilities:
@@ -127,12 +166,18 @@ def main(args):
                     np.save(stream, probabilities, allow_pickle=False)
                 temporary.replace(prob_path)
             # Overlay saved last; record is written only after all requested files succeed.
-            save_image(overlay_image(image, labels, args.alpha), target, args.jpg_quality)
+            visual = (color_overlay(image, display_labels, args.alpha) if color_classifier is not None
+                      else overlay_image(image, labels, args.alpha))
+            save_image(visual, target, args.jpg_quality)
             state['completed'][key] = dict(input=signature, width=image.width, height=image.height,
                 inference_seconds=seconds, postprocess_seconds=postprocess_seconds,
                 component_stats=component_stats, save_seconds=time.perf_counter()-save_start,
                 peak_allocated_gib=peak, overlay=str(target.relative_to(output)))
+            if color_stats is not None:
+                state['completed'][key]['color_stats'] = color_stats
             atomic_json(state, manifest)
+            if color_classifier is not None:
+                export_color_csv(output, state['completed'])
             logger.info('inference=%.2fs | peak=%.2f GiB | saved=%s', seconds, peak, target.name)
         with (output/'meta/per_image.csv').open('w', newline='', encoding='utf-8-sig') as stream:
             fields = ['image','width','height','inference_seconds','postprocess_seconds','save_seconds','peak_allocated_gib','overlay']
@@ -140,6 +185,8 @@ def main(args):
             writer.writeheader()
             for key, row in state['completed'].items():
                 writer.writerow(dict(image=key, **{k: row[k] for k in fields if k != 'image'}))
+        if color_classifier is not None:
+            export_color_csv(output, state['completed'])
         logger.info('Finished. Results: %s', output)
     except Exception:
         logger.exception('Inference stopped; completed outputs are retained. Use --resume with the same settings.')
