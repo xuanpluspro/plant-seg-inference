@@ -9,4 +9,4 @@
 颜色分类器放在 `color/xgboost/`、`color/svm/`、`color/random_forest/`，与分割权重分开。
 参见 [颜色分类说明](color/README.md)。
 
-XGBoost 颜色模型已随 Git 提交，来源与版本见 color/xgboost/README.md；SVM、随机森林仍由用户准备。
+XGBoost、SVM、随机森林颜色模型均由用户手动上传，不随 Git 提交。目录说明见 color/xgboost/README.md。
