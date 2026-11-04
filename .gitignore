@@ -20,3 +20,17 @@ weights/color/**
 !weights/color/svm/README.md
 !weights/color/random_forest/
 !weights/color/random_forest/README.md
+
+# Explicitly tracked source color models/reports; other user weights stay ignored.
+!weights/color/xgboost/xgboost_stage2_model.pkl
+!weights/color/xgboost/training_report.json
+!weights/color/xgboost/models_manifest.json
+!weights/color/xgboost/result1/
+!weights/color/xgboost/result1/*.pkl
+!weights/color/xgboost/result1/training_report*.json
+!weights/color/xgboost/result2/
+!weights/color/xgboost/result2/*.pkl
+!weights/color/xgboost/result2/training_report*.json
+!weights/color/xgboost/result3/
+!weights/color/xgboost/result3/*.pkl
+!weights/color/xgboost/result3/training_report*.json

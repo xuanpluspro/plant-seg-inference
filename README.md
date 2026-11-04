@@ -141,13 +141,13 @@ python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
 
 ### 准备颜色分类器
 
-将自己训练好的 pickle 模型分别放入：
+仓库已内置从 xgboostcolor 原样同步的 XGBoost 模型，`git pull` 后无需另外下载。默认示例使用：
 
 - `weights/color/xgboost/xgboost_stage2_model.pkl`
 - `weights/color/svm/svm_stage2.pkl`
 - `weights/color/random_forest/random_forest.pkl`
 
-不随本次更新下载模型或自动训练。源颜色仓库的 `artifacts/xgboost_stage2_model.pkl`、14维 `result*/xgboost_model.pkl` 及 `stage2_pipeline.py` 训练的模型属于候选格式，实际可加载性取决于 pickle 与依赖版本。随机森林同样要求 14 维特征、`classes_`、`n_features_in_`、`predict_proba`；本工具不负责训练分类器。XGBoost、SVM、随机森林是三种可选分类器，一次运行使用一个，不自动投票。
+本仓库内置的 XGBoost 文件及报告见 `weights/color/xgboost/README.md`，未重新训练。SVM 和随机森林权重仍需自行准备。源颜色仓库的 `artifacts/xgboost_stage2_model.pkl`、14维 `result*/xgboost_model.pkl` 及 `stage2_pipeline.py` 训练的模型属于候选格式，实际可加载性取决于 pickle 与依赖版本。随机森林同样要求 14 维特征、`classes_`、`n_features_in_`、`predict_proba`；本工具不负责训练分类器。XGBoost、SVM、随机森林是三种可选分类器，一次运行使用一个，不自动投票。
 
 按需逐个安装（不更换 torch）：
 

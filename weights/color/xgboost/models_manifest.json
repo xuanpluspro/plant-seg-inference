@@ -1,0 +1,35 @@
+{
+  "source_repository": "xuanpluspro/xgboostcolor",
+  "source_commit": "f02507bdc00d3644e61866d15fbdeea1000f407d",
+  "validation": "Binary sizes and Git blob SHA verified against source; no pickle deserialization or end-to-end classifier test performed.",
+  "models": [
+    {
+      "source_path": "artifacts/xgboost_stage2_model.pkl",
+      "path": "xgboost_stage2_model.pkl",
+      "bytes": 1408028,
+      "git_blob_sha": "e08def386f30196d68e99f96a9324546fb3b55c4",
+      "sha256": "3c8d149b56f24b6bb9394cc5142a342dff37a9dc399a3fdfdd61139dae2571da"
+    },
+    {
+      "source_path": "result1/xgboost_model.pkl",
+      "path": "result1/xgboost_model.pkl",
+      "bytes": 704904,
+      "git_blob_sha": "efcbf9ba97f5dec2be712370c7dbbdcf4d426e8a",
+      "sha256": "682903a95a8d5b25085264a675e3314bcf9f58bc1993a474ea87f8102f02718e"
+    },
+    {
+      "source_path": "result2/xgboost_model.pkl",
+      "path": "result2/xgboost_model.pkl",
+      "bytes": 704904,
+      "git_blob_sha": "efcbf9ba97f5dec2be712370c7dbbdcf4d426e8a",
+      "sha256": "682903a95a8d5b25085264a675e3314bcf9f58bc1993a474ea87f8102f02718e"
+    },
+    {
+      "source_path": "result3/xgboost_21d_model.pkl",
+      "path": "result3/xgboost_21d_model.pkl",
+      "bytes": 685252,
+      "git_blob_sha": "494c2e1c30564e56010abfc1a05f8390f720c907",
+      "sha256": "d8399228f83579f060a8c15ddb517f17fb3d0ce714573a9abbe20404e5464024"
+    }
+  ]
+}
