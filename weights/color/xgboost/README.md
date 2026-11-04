@@ -1,20 +1,23 @@
-# XGBoost 颜色模型（手动上传）
+# 已训练 XGBoost 颜色分类器
 
-实际 .pkl 文件不随 Git 提交。请将本地的 xgboost_stage2_model.pkl 上传到：
+以下文件从 [xgboostcolor](https://github.com/xuanpluspro/xgboostcolor/tree/f02507bdc00d3644e61866d15fbdeea1000f407d) 原样同步，未重新训练、未反序列化或修改模型。
 
-```text
-/root/gpufree-data/plant-seg-inference/weights/color/xgboost/xgboost_stage2_model.pkl
-```
+| 本目录文件 | 源路径 | 用途 |
+|---|---|---|
+| xgboost_stage2_model.pkl | artifacts/xgboost_stage2_model.pkl | 当前两阶段命令使用的颜色分类器候选，14 维接口 |
+| result1/xgboost_model.pkl | result1/xgboost_model.pkl | 历史14维版本 |
+| result2/xgboost_model.pkl | result2/xgboost_model.pkl | 与 result1 内容相同，保留源目录对应关系 |
+| result3/xgboost_21d_model.pkl | result3/xgboost_21d_model.pkl | 21维归档版本，不能用于当前14维推理接口 |
 
-源文件：[xgboostcolor/artifacts/xgboost_stage2_model.pkl](https://github.com/xuanpluspro/xgboostcolor/blob/f02507bdc00d3644e61866d15fbdeea1000f407d/artifacts/xgboost_stage2_model.pkl)。
+对应 training_report*.json 同步保留，报告仅代表源实验，不代表黑麦草上的精度。来源、Git blob SHA、字节数及 SHA256 记录在 models_manifest.json。
 
-推理参数：
+当前接口特征顺序为 R,G,B,H,S,a,b,GE,M,YE,Cb,Cr,I,Q，默认类别 1=green、0=senescent。启动时仍检查 n_features_in_、classes_ 和 predict_proba；文件名不代替检查。旧 pickle 可能与当前 XGBoost/sklearn 版本不兼容，需要匹配原训练环境；不自动补写未知属性。
+
 ```bash
---color-model weights/color/xgboost/xgboost_stage2_model.pkl --trust-color-model
+python -u predict.py --weights weights/best_inference.pth --input data/ck1 \
+  --output outputs/ck1color --mode full \
+  --color-model weights/color/xgboost/xgboost_stage2_model.pkl \
+  --trust-color-model --save-color-mask
 ```
 
-现有接口要求14维特征 R,G,B,H,S,a,b,GE,M,YE,Cb,Cr,I,Q，默认1绿色、0枯黄；result3的21维模型不能用于当前接口。SVM和随机森林同样自行上传。模型依赖版本兼容性需实际加载验证，不重新训练、不自动修补旧pickle。
-
-training_report*.json 和 models_manifest.json 保留来源记录；清单中的模型路径为手动上传建议位置，不代表仓库包含模型。报告不代表黑麦草精度。只对可信pickle启用 --trust-color-model。
-
-普通删除不清除 Git 历史中的旧模型对象；网络受影响时可 shallow clone 最新快照到新的目录，不要覆盖含本地数据/权重的旧目录。
+使用前仍需安装颜色分类依赖，见主 README。分割权重需自行放入 weights/，不包含在这些颜色模型里。不会自动启用颜色分类；必须显式指定 --color-model。
